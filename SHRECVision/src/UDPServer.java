@@ -1,8 +1,6 @@
 import java.io.*;
 import java.net.*;
 
-import org.usfirst.frc.team5450.robot.subsystems.Vision.VisionState;
-
 public class UDPServer implements Runnable {
 
 	/**
