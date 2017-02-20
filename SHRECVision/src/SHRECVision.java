@@ -4,6 +4,7 @@ import org.opencv.imgproc.*;
 import org.opencv.imgcodecs.*;
 import java.lang.*;
 import java.util.*;
+import java.io.*;
 
 /**
  * 
@@ -12,7 +13,7 @@ import java.util.*;
  * Description: This is a java application that uses OpenCV, a computer vision library,
  * to process images from an Axis IP Camera. This application tracks reflective tape,
  * and calculates an x, y, and z position and velocity. This data is published to a UDP
- * Socket that is connected to a NI RoboRIO (10.54.50.2) on port 5800.
+ * Socket that is connected to a NI RoboRIO on port 5800.
  * 
  * Contributors: Brandon Trabucco - Programming Lead.
  * 
@@ -49,12 +50,76 @@ import java.util.*;
  * both also connected via wi-fi. This Vision State is used by the pi for distance measurement
  * purposes.
  * 
+ * 
+ * 
+ * Version: 0.1.2.
+ * 
+ * Date: February 20, 2017.
+ * 
+ * Name: Switcheable Object Tracking
+ * 
+ * Description: This version of this project employs a UDP server to communicate between a
+ * roborio and a raspberry pi. The client UDP Socket receives a vision state, which directs
+ * the raspberry pi which vision target to open and process. This application dynamically loads
+ * vision tracking preferences and thresholds from a text file of the raspberry pi.
+ * 
  */
 class SHRECVision implements Runnable {
 	static { System.loadLibrary(Core.NATIVE_LIBRARY_NAME); }
 	
 	/**
-	 * The UDP Socket to post the x, y, and z positions and velocity to
+	 * Load preferences from a file
+	 */
+	private static void loadPrefs() {
+		BufferedReader br = null;
+        
+		int[] min = new int[3];
+		int[] max = new int[3];
+		double[] area = new double[2];
+           
+		try {
+			br = new BufferedReader(new FileReader("/home/pi/Documents/Java_Projects/SHRECVision/prefs.txt"));
+			String line;
+				
+            for (int i = 0; (line = br.readLine()) != null; i++) {
+                if (i == 0) {
+					min[0] = Integer.parseInt(line);
+				} else if (i == 1) {
+					min[1] = Integer.parseInt(line);
+				} else if (i == 2) {
+					min[2] = Integer.parseInt(line);
+				} else if (i == 3) {
+					max[0] = Integer.parseInt(line);
+				} else if (i == 4) {
+					max[1] = Integer.parseInt(line);
+				} else if (i == 5) {
+					max[2] = Integer.parseInt(line);
+				} else if (i == 6) {
+					area[0] = Double.parseDouble(line);
+				} else if (i == 7) {
+					area[1] = Double.parseDouble(line);
+				}
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            try {
+                if (br != null) {
+                    br.close();
+                }
+            } catch (IOException ex) {
+                ex.printStackTrace();
+            }
+        }
+        
+        thd_color_low = new Scalar(min[0], min[1], min[2]);
+		thd_color_high = new Scalar(max[0], max[1], max[2]);
+		min_area = area[0];
+		max_area = area[1];
+	}
+	
+	/**
+	 * The UDP Socket to post the x, y, and z positions and velocities to
 	 */
 	private static final UDPClient client = new UDPClient();
 	
@@ -62,15 +127,15 @@ class SHRECVision implements Runnable {
 	 * These thresholds are clipping points for the Core.inRange() function.
 	 * Any color within this range will show as white in the filtered image.
 	 */
-	private static final Scalar thd_color_low = new Scalar(0, 0, 0);
-	private static final Scalar thd_color_high = new Scalar(255, 255, 255);
+	private static Scalar thd_color_low = new Scalar(0, 0, 0);
+	private static Scalar thd_color_high = new Scalar(255, 255, 255);
 	
 	/**
 	 * Thresholds for contour area. These ensure that a countour that is too small
 	 * or too large is rejected.
 	 */
-	private static final double min_area = 0.0;
-	private static final double max_area = 1000000.0;
+	private static double min_area = 0.0;
+	private static double max_area = 1000000.0;
 	
 	/**
 	 * The physical size of the boiler reflective tape
@@ -132,7 +197,7 @@ class SHRECVision implements Runnable {
 	 * This is the entry point of this applicaton
 	 */
 	public static void main(String[] args) {
-		new Thread(new SHRECVision()).start();
+			new SHRECVision().run();
 	}
 	
 	/**
@@ -154,11 +219,15 @@ class SHRECVision implements Runnable {
 		/**
 		 * Open a video capture stream
 		 */
-		VideoCapture capture = new VideoCapture("http://FRC:FRC@10.54.50.3/mjpg/video.mjpg");
+		VideoCapture captureGear = new VideoCapture("http://FRC:FRC@10.54.50.3:80/mjpg/video.mjpg");
+		VideoCapture captureBoiler = new VideoCapture("http://FRC:FRC@10.54.50.4:80/mjpg/video.mjpg");
 		Mat frame = new Mat();
 		wait(1000);
 		
-		if (capture.isOpened()) {
+		/**
+		 * Check the state of the video stream
+		 */
+		if (captureGear.isOpened() && captureBoiler.isOpened()) {
 			/**
 			 * Video stream opened sucessfully
 			 */
@@ -169,39 +238,70 @@ class SHRECVision implements Runnable {
 			 */
 			while (client.getVisionState() != UDPClient.VisionState.Disabled) {
 				/**
-				 * Obtain a video frame
+				 * Load preferences from an external text file
 				 */
-				boolean frame_opened = capture.read(frame);
+				loadPrefs();
 				
 				/**
-				 * Check if frame was read correctly
+				 * Obtain the current state of the UDP Socket
 				 */
-				if(frame_opened && client.getVisionState() != UDPClient.VisionState.Idle) {
+				
+				/**
+				 * Ensure that the UDP Socket is connected
+				 */
+				if (client.isConnected()) {
 					/**
-					 * Frame read successfully
+					 * Socket opened successfully
 					 */
-					System.out.println("Frame read successfully, processing enabled | " + SHRECVision.mRate + " frames/sec");
+					UDPClient.VisionState state = client.getVisionState();
+					 
+					/**
+					 * Obtain a video frame
+					 */
+					 boolean frame_opened = false;
+					 if (state == UDPClient.VisionState.Boiler) {
+						 frame_opened = captureBoiler.read(frame);
+					 } else if (state == UDPClient.VisionState.Gear) {
+						 frame_opened = captureGear.read(frame);
+					 }
 					
 					/**
-					 * Begin processing the frame
+					 * Check if frame was read correctly
 					 */
-					process(frame);
-				} else if(frame_opened && client.getVisionState() == UDPClient.VisionState.Idle) {
+					if(frame_opened) {
+						/**
+						 * Frame read successfully
+						 */
+						//System.out.println("Frame read successfully, processing enabled | " + SHRECVision.mRate + " frames/sec");
+						
+						/**
+						 * Begin processing the frame
+						 */
+						process(frame);
+					} else if(state == UDPClient.VisionState.Idle) {
+						/**
+						 * The vision state is idle, no processing necessary
+						 */
+						//System.out.println("Frame not read, processing disabled");
+					} else {
+						/**
+						 * Error reading frame
+						 */
+						System.out.println("Error reading frame");
+					}
+					
 					/**
-					 * The vision state is idle, no processing necessary
+					 * Calculate a refresh rate
 					 */
-					System.out.println("Frame read successfully, processing disabled | " + SHRECVision.mRate + " frames/sec");
+					getRate();
 				} else {
 					/**
-					 * Error reading frame
+					 * Failed to open socket
+					 * Start a new socket connection
 					 */
-					System.out.println("Error reading frame");
+					new Thread(client).start();
+					wait(1000);
 				}
-				
-				/**
-				 * Calculate a refresh rate
-				 */
-				getRate();
 			}
 		} else {
 			/**
@@ -212,7 +312,6 @@ class SHRECVision implements Runnable {
 			/**
 			 * Retry opening the camera stream
 			 */
-			client.setVisionState(UDPClient.VisionState.Disabled);
 			SHRECVision.this.run();
 		}
 	}
@@ -221,11 +320,11 @@ class SHRECVision implements Runnable {
 	 * This processes the incoming frame from the video stream
 	 */
 	private void process(Mat frame) {
+		Mat original = frame.clone();
 		/**
 		 * First, convert the image to the HSV color space
 		 */
-		Imgproc.cvtColor(frame, frame, Imgproc.COLOR_RGB2HSV);
-    	Imgcodecs.imwrite("/home/pi/Desktop/video.png", frame);
+		Imgproc.cvtColor(frame, frame, Imgproc.COLOR_BGR2HSV);
 		
 		/**
 		 * Second, apply an HSV color threshold
@@ -236,12 +335,8 @@ class SHRECVision implements Runnable {
 		 * Remove noise from the frame
 		 */
 		Imgproc.morphologyEx(frame, frame, Imgproc.MORPH_OPEN, element);
-		
-		/**
-		 * Calculate the x, y, and z position and velocity of the target shape
-		 */
-		double[] coordinates = new double[6];
-		
+    	Imgcodecs.imwrite("/home/pi/Desktop/threshold.png", frame);
+    	
 		/**
 		 * Store contours found in the frame
 		 */
@@ -277,11 +372,18 @@ class SHRECVision implements Runnable {
     	 * Check if a matching coutour has been found
     	 */
     	if (index1 != -1 && index2 != -1) {
+			//System.out.println("Two matching contours found");
+			
 			/**
 			 * Obtain the bounding box of the largest shape
 			 */
 			Rect boundary1 = Imgproc.boundingRect(contours.get(index1));
 			Rect boundary2 = Imgproc.boundingRect(contours.get(index2));
+			
+			/**
+			 * Calculate the x, y, and z position and velocity of the target shape
+			 */
+			double[] coordinates = client.getCoords();
 			
 			/**
 			 * Locate the reflective tape
@@ -292,11 +394,12 @@ class SHRECVision implements Runnable {
 				 * Update the z, y, and z positions
 				 * Calculating a running average velocity
 				 */
-				double[] old_coords = coordinates;
+				double[] old_coords = new double[6];
+				System.arraycopy( coordinates, 0, old_coords, 0, coordinates.length );
 				coordinates = new double[] {
-					((double)(boundary1.tl().x + boundary2.br().x) / 2.0),
-					((double)(boundary1.tl().y + boundary2.br().y) / 2.0),
-					gear_fudge_factor * gear_width_difference / (Math.tan(camera_horizontal_fov * (Math.abs(((double)(boundary1.tl().x + boundary1.br().x) / 2.0) - ((double)(boundary2.tl().x + boundary2.br().x) / 2.0)) + (boundary1.width / 2.0) + (boundary2.width / 2.0)) / camera_width)),
+					((double)(boundary1.tl().x + boundary2.br().x) / 2.0) / (double)camera_width * 2.0 - 1.0,
+					((double)(boundary1.tl().y + boundary2.br().y) / 2.0) / (double)camera_height * 2.0 - 1.0,
+					boiler_fudge_factor * boiler_width / (Math.tan(camera_horizontal_fov * (Math.abs(((double)(boundary1.tl().x + boundary1.br().x) / 2.0) - ((double)(boundary2.tl().x + boundary2.br().x) / 2.0)) + (boundary1.width / 2.0) + (boundary2.width / 2.0)) / camera_width)),
 					0.4 * old_coords[3] + 0.6 * (coordinates[0] - old_coords[0]),
 					0.4 * old_coords[4] + 0.6 * (coordinates[1] - old_coords[1]),
 					0.4 * old_coords[5] + 0.6 * (coordinates[2] - old_coords[2]),
@@ -307,24 +410,31 @@ class SHRECVision implements Runnable {
 				 * Update the z, y, and z positions
 				 * Calculating a running average velocity
 				 */
-				double[] old_coords = coordinates;
+				double[] old_coords = new double[6];
+				System.arraycopy( coordinates, 0, old_coords, 0, coordinates.length );
 				coordinates = new double[] {
-					((double)(boundary1.tl().x + boundary2.br().x) / 2.0),
-					((double)(boundary1.tl().y + boundary2.br().y) / 2.0),
-					boiler_fudge_factor * boiler_width / (Math.tan(camera_horizontal_fov * (Math.abs(((double)(boundary1.tl().x + boundary1.br().x) / 2.0) - ((double)(boundary2.tl().x + boundary2.br().x) / 2.0)) + (boundary1.width / 2.0) + (boundary2.width / 2.0)) / camera_width)),
+					((double)(boundary1.tl().x + boundary2.br().x) / 2.0) / (double)camera_width * 2.0 - 1.0,
+					((double)(boundary1.tl().y + boundary2.br().y) / 2.0) / (double)camera_height * 2.0 - 1.0,
+					gear_fudge_factor * gear_width_difference / (Math.tan(camera_horizontal_fov * (Math.abs(((double)(boundary1.tl().x + boundary1.br().x) / 2.0) - ((double)(boundary2.tl().x + boundary2.br().x) / 2.0)) + (boundary1.width / 2.0) + (boundary2.width / 2.0)) / camera_width)),
 					0.4 * old_coords[3] + 0.6 * (coordinates[0] - old_coords[0]),
 					0.4 * old_coords[4] + 0.6 * (coordinates[1] - old_coords[1]),
 					0.4 * old_coords[5] + 0.6 * (coordinates[2] - old_coords[2]),
 				};
 			}
+			
+			/**
+			 * Draw on original image
+			 */
+			Imgproc.circle(original, new Point(coordinates[0], coordinates[1]), 5, new Scalar(0, 255, 0), 2);
+			Imgcodecs.imwrite("/home/pi/Desktop/video.png", original);
+			
+			/**
+			 * Send the coordinates to the UDP Socket
+			 */
+			client.setCoords(coordinates);
 		} else {
-			coordinates = new double[] {0, 0, 0, 0, 0, 0};
+			System.out.println("No matching contours found");
 		}
-		
-		/**
-		 * Send the coordinates to the UDP Socket
-		 */
-		client.setCoords(coordinates);
 	}
 	
 }

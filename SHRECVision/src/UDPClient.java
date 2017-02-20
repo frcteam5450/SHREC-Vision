@@ -20,7 +20,7 @@ public class UDPClient implements Runnable {
 		Disabled
 	}
 	
-	private VisionState state;
+	private VisionState state = VisionState.Idle;
 	
 	private DatagramSocket clientSocket;
 	private InetAddress IPAddress;
@@ -28,8 +28,6 @@ public class UDPClient implements Runnable {
 	private byte[] receiveData;
 	
 	private void startSocket() {
-		state = VisionState.Idle;
-		
 		// Start the UDP socket and open a connection to the server
 		try {
 			clientSocket = new DatagramSocket();
@@ -48,50 +46,49 @@ public class UDPClient implements Runnable {
 		sendData = new byte[1024];
 		receiveData = new byte[1024];
 		coordinates = new double[6];
+		
+		if (isConnected()) {
+			System.out.println("Successfully connected to UDP Server");
+			setVisionState(VisionState.Idle);
+		} else {
+			System.out.println("Failed to connect to UDP Server");
+			setVisionState(VisionState.Disabled);
+		}
 	}
 	
 	private void updateSocket() {
-		if (isConnected()) {
-			// Generate a message to send
-			String request = generateRequest();
-			sendData = request.getBytes();
-			
-			// Send the request to the UDP Server
-			DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, IPAddress, 5800);
-			try {
-				clientSocket.send(sendPacket);
-			} catch (IOException e) {
-				// TODO Auto-generated catch block
-				//e.printStackTrace();
-			}
-			
-			// Receive a response from the server
-			DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
-			try {
-				clientSocket.receive(receivePacket);
-			} catch (IOException e) {
-				// TODO Auto-generated catch block
-				//e.printStackTrace();
-			}
-			
-			String response = new String(receivePacket.getData());
-			if (response.equals("3")) {
-				setVisionState(VisionState.Boiler);
-			} else if (response.equals("2")) {
-				setVisionState(VisionState.Gear);
-			} else if (response.equals("1")) {
-				setVisionState(VisionState.Idle);
-			} else if (response.equals("0")) {
-				setVisionState(VisionState.Disabled);
-			}
-		} else {
-			System.out.println("Not connected to UDP Server");
-			try {
-				Thread.sleep(1000);
-			} catch(InterruptedException e) {
-				//e.printStackTrace();
-			}
-			startSocket();
+		
+		// Generate a message to send
+		String request = generateRequest();
+		sendData = request.getBytes();
+		
+		// Send the request to the UDP Server
+		DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, IPAddress, 5800);
+		try {
+			clientSocket.send(sendPacket);
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			//e.printStackTrace();
+		}
+		
+		// Receive a response from the server
+		DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
+		try {
+			clientSocket.receive(receivePacket);
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			//e.printStackTrace();
+		}
+		
+		String response = new String(receivePacket.getData());
+		if (response.equals("3")) {
+			setVisionState(VisionState.Boiler);
+		} else if (response.equals("2")) {
+			setVisionState(VisionState.Gear);
+		} else if (response.equals("1")) {
+			setVisionState(VisionState.Idle);
+		} else if (response.equals("0")) {
+			setVisionState(VisionState.Disabled);
 		}
 	}
 	
@@ -127,14 +124,14 @@ public class UDPClient implements Runnable {
 	}
 	
 	public boolean isConnected() {
-		return IPAddress != null;
+		return IPAddress != null && clientSocket != null;
 	}
 
 	@Override
 	public void run() {
 		// TODO Auto-generated method stub
 		UDPClient.this.startSocket();
-		while (state != VisionState.Disabled) {
+		while (getVisionState() != VisionState.Disabled) {
 			UDPClient.this.updateSocket();
 		}
 		UDPClient.this.closeSocket();

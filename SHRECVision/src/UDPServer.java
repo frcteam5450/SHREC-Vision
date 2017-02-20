@@ -20,26 +20,32 @@ public class UDPServer implements Runnable {
 		Disabled
 	}
 	
-	private VisionState state;
+	private VisionState state = VisionState.Idle;
 	
 	private DatagramSocket serverSocket;
 	private byte[] sendData;
 	private byte[] receiveData;
 	
 	private void startSocket() {
-		state = VisionState.Idle;
-		
 		// Start the UDP socket and open a connection to the server
 		try {
 			// Bind the socket to this port on roboRIO-5450-FRC.local 5800-5810
 			serverSocket = new DatagramSocket(5800);
 		} catch (SocketException e) {
 			// TODO Auto-generated catch block
-			e.printStackTrace();
+			//e.printStackTrace();
 		}
 		receiveData = new byte[1024];
 		sendData = new byte[1024];
 		coordinates = new double[6];
+		
+		if (isConnected()) {
+			System.out.println("Successfully started UDP Server");
+			setVisionState(VisionState.Idle);
+		} else {
+			System.out.println("Failed to start UDP Server");
+			setVisionState(VisionState.Disabled);
+		}
 	}
 	
 	private void updateSocket() {
@@ -50,7 +56,7 @@ public class UDPServer implements Runnable {
 			serverSocket.receive(receivePacket);
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
-			e.printStackTrace();
+			//e.printStackTrace();
 		}
 		
 		// Extract text from the byte packet
@@ -59,13 +65,13 @@ public class UDPServer implements Runnable {
         
         // Send a message back to the client
         String response = "";
-        if (state == VisionState.Boiler) {
+        if (getVisionState() == VisionState.Boiler) {
         	response = "3";
-        } else if (state == VisionState.Gear) {
+        } else if (getVisionState() == VisionState.Gear) {
         	response = "2";
-        } else if (state == VisionState.Idle) {
+        } else if (getVisionState() == VisionState.Idle) {
         	response = "1";
-        } else if (state == VisionState.Disabled) {
+        } else if (getVisionState() == VisionState.Disabled) {
         	response = "0";
         }
         sendData = response.getBytes();
@@ -80,7 +86,7 @@ public class UDPServer implements Runnable {
 			serverSocket.send(sendPacket);
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
-			e.printStackTrace();
+			//e.printStackTrace();
 		}
 	}
 	
@@ -111,12 +117,16 @@ public class UDPServer implements Runnable {
 	public synchronized double[] getCoords() {
 		return coordinates;
 	}
+	
+	public boolean isConnected() {
+		return serverSocket != null;
+	}
 
 	@Override
 	public void run() {
 		// TODO Auto-generated method stub
 		UDPServer.this.startSocket();
-		while (state != VisionState.Disabled) {
+		while (getVisionState() != VisionState.Disabled) {
 			UDPServer.this.updateSocket();
 		}
 		UDPServer.this.closeSocket();
