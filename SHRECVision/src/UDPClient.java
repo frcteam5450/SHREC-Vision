@@ -27,22 +27,22 @@ public class UDPClient implements Runnable {
 	private byte[] sendData;
 	private byte[] receiveData;
 	
-	public void startSocket() {
+	private void startSocket() {
 		state = VisionState.Idle;
 		
 		// Start the UDP socket and open a connection to the server
 		try {
-			clientSocket = new DatagramSocket(5800);
-		} catch (SocketException e1) {
+			clientSocket = new DatagramSocket();
+		} catch (SocketException e) {
 			// TODO Auto-generated catch block
-			e1.printStackTrace();
+			//e.printStackTrace();
 		}
 		
 		try {
 			IPAddress = InetAddress.getByName("roboRIO-5450-FRC.local");
 		} catch (UnknownHostException e) {
 			// TODO Auto-generated catch block
-			e.printStackTrace();
+			//e.printStackTrace();
 		}
 		
 		sendData = new byte[1024];
@@ -50,46 +50,56 @@ public class UDPClient implements Runnable {
 		coordinates = new double[6];
 	}
 	
-	public void updateSocket() {
-		// Generate a message to send
-		String request = generateRequest();
-		sendData = request.getBytes();
-		
-		// Send the request to the UDP Server
-		DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, IPAddress, 5800);
-		try {
-			clientSocket.send(sendPacket);
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+	private void updateSocket() {
+		if (isConnected()) {
+			// Generate a message to send
+			String request = generateRequest();
+			sendData = request.getBytes();
+			
+			// Send the request to the UDP Server
+			DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, IPAddress, 5800);
+			try {
+				clientSocket.send(sendPacket);
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				//e.printStackTrace();
+			}
+			
+			// Receive a response from the server
+			DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
+			try {
+				clientSocket.receive(receivePacket);
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				//e.printStackTrace();
+			}
+			
+			String response = new String(receivePacket.getData());
+			if (response.equals("3")) {
+				setVisionState(VisionState.Boiler);
+			} else if (response.equals("2")) {
+				setVisionState(VisionState.Gear);
+			} else if (response.equals("1")) {
+				setVisionState(VisionState.Idle);
+			} else if (response.equals("0")) {
+				setVisionState(VisionState.Disabled);
+			}
+		} else {
+			System.out.println("Not connected to UDP Server");
+			try {
+				Thread.sleep(1000);
+			} catch(InterruptedException e) {
+				//e.printStackTrace();
+			}
+			startSocket();
 		}
-		
-		// Receive a response from the server
-		DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
-		try {
-			clientSocket.receive(receivePacket);
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-		
-		String response = new String(receivePacket.getData());
-		if (response.equals("3")) {
-			setVisionState(VisionState.Boiler);
-        } else if (response.equals("2")) {
-        	setVisionState(VisionState.Gear);
-        } else if (response.equals("1")) {
-        	setVisionState(VisionState.Idle);
-        } else if (response.equals("0")) {
-        	setVisionState(VisionState.Disabled);
-        }
 	}
 	
-	public void closeSocket() {
+	private void closeSocket() {
 		clientSocket.close();
 	}
 	
-	public String generateRequest() {
+	private String generateRequest() {
 		String request = "";
 		for (int i = 0; i < getCoords().length; i++) {
 			request += getCoords()[i];
@@ -114,6 +124,10 @@ public class UDPClient implements Runnable {
 	
 	public synchronized double[] getCoords() {
 		return coordinates;
+	}
+	
+	public boolean isConnected() {
+		return IPAddress != null;
 	}
 
 	@Override

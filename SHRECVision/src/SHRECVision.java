@@ -1,7 +1,9 @@
 import org.opencv.core.*;
 import org.opencv.videoio.*;
 import org.opencv.imgproc.*;
+import org.opencv.imgcodecs.*;
 import java.lang.*;
+import java.util.*;
 
 /**
  * 
@@ -32,8 +34,24 @@ import java.lang.*;
  * filters. This program will be expended in the future to calculate x, y, and z
  * positions and velocities, as well as grab frames from an Axis IP Camera.
  * 
+ * 
+ * 
+ * Version: 0.1.1.
+ * 
+ * Date: February 20, 2017.
+ * 
+ * Name: Real-time Computer Vision.
+ * 
+ * Description: This version of this project opens a camera stream from an Axis m1013 IP
+ * Camera with a static IP Address connected to a raspberry pi over wi-fi. A frame is
+ * pulled from the camera 15 times per second, and the frame is processed using OpenCV
+ * filters. A VisionState is communicated between the raspberry pi and roborio that are
+ * both also connected via wi-fi. This Vision State is used by the pi for distance measurement
+ * purposes.
+ * 
  */
 class SHRECVision implements Runnable {
+	static { System.loadLibrary(Core.NATIVE_LIBRARY_NAME); }
 	
 	/**
 	 * The UDP Socket to post the x, y, and z positions and velocity to
@@ -46,6 +64,42 @@ class SHRECVision implements Runnable {
 	 */
 	private static final Scalar thd_color_low = new Scalar(0, 0, 0);
 	private static final Scalar thd_color_high = new Scalar(255, 255, 255);
+	
+	/**
+	 * Thresholds for contour area. These ensure that a countour that is too small
+	 * or too large is rejected.
+	 */
+	private static final double min_area = 0.0;
+	private static final double max_area = 1000000.0;
+	
+	/**
+	 * The physical size of the boiler reflective tape
+	 */
+	private static final double boiler_width = 15.0;
+	private static final double boiler_height_top = 4.0;
+	private static final double boiler_height_bottom = 2.0;
+	private static final double boiler_height_difference = 10.0;
+	private static final double boiler_fudge_factor = 1.0;
+	
+	/**
+	 * The physical size of the gear hook reflective tape
+	 */
+	private static final double gear_width = 2.0;
+	private static final double gear_width_difference = 10.25;
+	private static final double gear_height = 5.0;
+	private static final double gear_fudge_factor = 1.0;
+	
+	/**
+	 * The field of view of the camera
+	 */
+	private static final double camera_horizontal_fov = 67.0;
+	private static final double camera_width = 320.0;
+	private static final double camera_height = 240.0;
+	
+	/**
+	 * A pixel cluster size. Any clusters smaller are considered noise and will be removed.
+	 */
+	private static final Mat element = Imgproc.getStructuringElement(Imgproc.MORPH_ELLIPSE, new Size(5, 5));
 	
 	/**
 	 * Wait for an amount of time
@@ -61,10 +115,23 @@ class SHRECVision implements Runnable {
 	}
 	
 	/**
+	 * Keep a running average of the refresh rate
+	 */
+	private static long mPreviousTime = System.currentTimeMillis();
+	private static long mCurrentTime = 0;
+	private static double mRate = 0;
+	private static double getRate() {
+		mCurrentTime = System.currentTimeMillis();
+		mRate = 0.4 * mRate + 0.6 * (1000.0 / ((double)(mCurrentTime - mPreviousTime)));
+		mPreviousTime = mCurrentTime;
+		return mRate;
+	}
+	private static int i = 0;
+	
+	/**
 	 * This is the entry point of this applicaton
 	 */
 	public static void main(String[] args) {
-		System.loadLibrary(Core.NATIVE_LIBRARY_NAME);
 		new Thread(new SHRECVision()).start();
 	}
 	
@@ -73,6 +140,11 @@ class SHRECVision implements Runnable {
 	 */
 	@Override
 	public void run() {
+		/**
+		 * Allow the roborio and radio to begin transmitting a wireless signal
+		 */
+		wait(5000);
+		
 		/**
 		 * Start the UDP Socket thread
 		 */
@@ -99,21 +171,26 @@ class SHRECVision implements Runnable {
 				/**
 				 * Obtain a video frame
 				 */
-				if(capture.read(frame) && client.getVisionState() != UDPClient.VisionState.Idle) {
+				boolean frame_opened = capture.read(frame);
+				
+				/**
+				 * Check if frame was read correctly
+				 */
+				if(frame_opened && client.getVisionState() != UDPClient.VisionState.Idle) {
 					/**
 					 * Frame read successfully
 					 */
-					System.out.println("Frame read successfully, processing enabled");
+					System.out.println("Frame read successfully, processing enabled | " + SHRECVision.mRate + " frames/sec");
 					
 					/**
 					 * Begin processing the frame
 					 */
 					process(frame);
-				} else if(capture.read(frame) && client.getVisionState() == UDPClient.VisionState.Idle) {
+				} else if(frame_opened && client.getVisionState() == UDPClient.VisionState.Idle) {
 					/**
 					 * The vision state is idle, no processing necessary
 					 */
-					System.out.println("Frame read successfully, processing disabled");
+					System.out.println("Frame read successfully, processing disabled | " + SHRECVision.mRate + " frames/sec");
 				} else {
 					/**
 					 * Error reading frame
@@ -122,9 +199,9 @@ class SHRECVision implements Runnable {
 				}
 				
 				/**
-				 * Set a refresh delay for stability
+				 * Calculate a refresh rate
 				 */
-				wait(50);
+				getRate();
 			}
 		} else {
 			/**
@@ -133,9 +210,10 @@ class SHRECVision implements Runnable {
 			System.out.println("Error opening video stream");
 			
 			/**
-			 * Exit the appliction
+			 * Retry opening the camera stream
 			 */
-			return;
+			client.setVisionState(UDPClient.VisionState.Disabled);
+			SHRECVision.this.run();
 		}
 	}
 	
@@ -147,6 +225,7 @@ class SHRECVision implements Runnable {
 		 * First, convert the image to the HSV color space
 		 */
 		Imgproc.cvtColor(frame, frame, Imgproc.COLOR_RGB2HSV);
+    	Imgcodecs.imwrite("/home/pi/Desktop/video.png", frame);
 		
 		/**
 		 * Second, apply an HSV color threshold
@@ -154,22 +233,91 @@ class SHRECVision implements Runnable {
 		Core.inRange(frame, thd_color_low, thd_color_high, frame);
 		
 		/**
+		 * Remove noise from the frame
+		 */
+		Imgproc.morphologyEx(frame, frame, Imgproc.MORPH_OPEN, element);
+		
+		/**
 		 * Calculate the x, y, and z position and velocity of the target shape
 		 */
 		double[] coordinates = new double[6];
 		
 		/**
-		 * Locate the reflective tape
+		 * Store contours found in the frame
 		 */
-		if (client.getVisionState() == UDPClient.VisionState.Boiler) {
+		List<MatOfPoint> contours = new ArrayList<MatOfPoint>();
+    	Mat hierarchy = new Mat();
+    	
+    	/**
+    	 * List found contours in no specified order
+    	 */
+    	Imgproc.findContours(frame, contours, hierarchy, Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_SIMPLE);
+    	
+    	/**
+    	 * Select the largest two contours
+    	 */
+    	double referenced_area1 = 0;
+    	double referenced_area2 = 0;
+    	int index1 = -1;
+    	int index2 = -1;
+    	for (int i = 0; i < contours.size(); i++) {
+			double area = Imgproc.contourArea(contours.get(i));
+			if ((area > referenced_area1) && (area > min_area) && (area < max_area)) {
+				referenced_area2 = referenced_area1;
+				referenced_area1 = area;
+				index2 = index1;
+				index1 = i;
+			} else if ((area > referenced_area2) && (area > min_area) && (area < max_area)) {
+				referenced_area2 = area;
+				index2 = i;
+			}
+    	}
+    	
+    	/**
+    	 * Check if a matching coutour has been found
+    	 */
+    	if (index1 != -1 && index2 != -1) {
 			/**
-			 * The robot is facing the boiler
+			 * Obtain the bounding box of the largest shape
 			 */
-			coordinates = new double[] {0, 0, 0, 0, 0, 0};
-		} else if (client.getVisionState() == UDPClient.VisionState.Gear) {
+			Rect boundary1 = Imgproc.boundingRect(contours.get(index1));
+			Rect boundary2 = Imgproc.boundingRect(contours.get(index2));
+			
 			/**
-			 * The robot is facing the gear hook
+			 * Locate the reflective tape
 			 */
+			if (client.getVisionState() == UDPClient.VisionState.Boiler) {
+				/**
+				 * The robot is facing the boiler
+				 * Update the z, y, and z positions
+				 * Calculating a running average velocity
+				 */
+				double[] old_coords = coordinates;
+				coordinates = new double[] {
+					((double)(boundary1.tl().x + boundary2.br().x) / 2.0),
+					((double)(boundary1.tl().y + boundary2.br().y) / 2.0),
+					gear_fudge_factor * gear_width_difference / (Math.tan(camera_horizontal_fov * (Math.abs(((double)(boundary1.tl().x + boundary1.br().x) / 2.0) - ((double)(boundary2.tl().x + boundary2.br().x) / 2.0)) + (boundary1.width / 2.0) + (boundary2.width / 2.0)) / camera_width)),
+					0.4 * old_coords[3] + 0.6 * (coordinates[0] - old_coords[0]),
+					0.4 * old_coords[4] + 0.6 * (coordinates[1] - old_coords[1]),
+					0.4 * old_coords[5] + 0.6 * (coordinates[2] - old_coords[2]),
+				};
+			} else if (client.getVisionState() == UDPClient.VisionState.Gear) {
+				/**
+				 * The robot is facing the gear hook
+				 * Update the z, y, and z positions
+				 * Calculating a running average velocity
+				 */
+				double[] old_coords = coordinates;
+				coordinates = new double[] {
+					((double)(boundary1.tl().x + boundary2.br().x) / 2.0),
+					((double)(boundary1.tl().y + boundary2.br().y) / 2.0),
+					boiler_fudge_factor * boiler_width / (Math.tan(camera_horizontal_fov * (Math.abs(((double)(boundary1.tl().x + boundary1.br().x) / 2.0) - ((double)(boundary2.tl().x + boundary2.br().x) / 2.0)) + (boundary1.width / 2.0) + (boundary2.width / 2.0)) / camera_width)),
+					0.4 * old_coords[3] + 0.6 * (coordinates[0] - old_coords[0]),
+					0.4 * old_coords[4] + 0.6 * (coordinates[1] - old_coords[1]),
+					0.4 * old_coords[5] + 0.6 * (coordinates[2] - old_coords[2]),
+				};
+			}
+		} else {
 			coordinates = new double[] {0, 0, 0, 0, 0, 0};
 		}
 		
