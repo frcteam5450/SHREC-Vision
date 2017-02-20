@@ -36,6 +36,11 @@ import java.lang.*;
 class SHRECVision implements Runnable {
 	
 	/**
+	 * The UDP Socket to post the x, y, and z positions and velocity to
+	 */
+	private static final UDPClient client = new UDPClient();
+	
+	/**
 	 * These thresholds are clipping points for the Core.inRange() function.
 	 * Any color within this range will show as white in the filtered image.
 	 */
@@ -60,7 +65,7 @@ class SHRECVision implements Runnable {
 	 */
 	public static void main(String[] args) {
 		System.loadLibrary(Core.NATIVE_LIBRARY_NAME);
-		new SHRECVision().run();
+		new Thread(new SHRECVision()).start();
 	}
 	
 	/**
@@ -68,9 +73,17 @@ class SHRECVision implements Runnable {
 	 */
 	@Override
 	public void run() {
+		/**
+		 * Start the UDP Socket thread
+		 */
+		new Thread(client).start();
+		wait(1000);
+		 
+		/**
+		 * Open a video capture stream
+		 */
 		VideoCapture capture = new VideoCapture(0);
 		Mat frame = new Mat();
-		
 		wait(1000);
 		
 		if (capture.isOpened()) {
@@ -82,20 +95,25 @@ class SHRECVision implements Runnable {
 			/**
 			 * Begin video processing loop
 			 */
-			for (;;) {
+			while (client.getVisionState() != UDPClient.VisionState.Disabled) {
 				/**
 				 * Obtain a video frame
 				 */
-				if(capture.read(frame)) {
+				if(capture.read(frame) && client.getVisionState() != UDPClient.VisionState.Idle) {
 					/**
 					 * Frame read successfully
 					 */
-					System.out.println("Frame read successfully");
+					System.out.println("Frame read successfully, processing enabled");
 					
 					/**
 					 * Begin processing the frame
 					 */
 					process(frame);
+				} else if(capture.read(frame) && client.getVisionState() == UDPClient.VisionState.Idle) {
+					/**
+					 * The vision state is idle, no processing necessary
+					 */
+					System.out.println("Frame read successfully, processing disabled");
 				} else {
 					/**
 					 * Error reading frame
@@ -103,6 +121,9 @@ class SHRECVision implements Runnable {
 					System.out.println("Error reading frame");
 				}
 				
+				/**
+				 * Set a refresh delay for stability
+				 */
 				wait(50);
 			}
 		} else {
@@ -131,6 +152,31 @@ class SHRECVision implements Runnable {
 		 * Second, apply an HSV color threshold
 		 */
 		Core.inRange(frame, thd_color_low, thd_color_high, frame);
+		
+		/**
+		 * Calculate the x, y, and z position and velocity of the target shape
+		 */
+		double[] coordinates = new double[6];
+		
+		/**
+		 * Locate the reflective tape
+		 */
+		if (client.getVisionState() == UDPClient.VisionState.Boiler) {
+			/**
+			 * The robot is facing the boiler
+			 */
+			coordinates = new double[] {0, 0, 0, 0, 0, 0};
+		} else if (client.getVisionState() == UDPClient.VisionState.Gear) {
+			/**
+			 * The robot is facing the gear hook
+			 */
+			coordinates = new double[] {0, 0, 0, 0, 0, 0};
+		}
+		
+		/**
+		 * Send the coordinates to the UDP Socket
+		 */
+		client.setCoords(coordinates);
 	}
 	
 }
