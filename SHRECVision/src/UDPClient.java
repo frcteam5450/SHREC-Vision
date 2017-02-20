@@ -56,7 +56,7 @@ public class UDPClient implements Runnable {
 		sendData = request.getBytes();
 		
 		// Send the request to the UDP Server
-		DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, IPAddress, 9876);
+		DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, IPAddress, 5800);
 		try {
 			clientSocket.send(sendPacket);
 		} catch (IOException e) {
