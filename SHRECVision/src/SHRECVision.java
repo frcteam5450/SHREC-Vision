@@ -82,7 +82,7 @@ class SHRECVision implements Runnable {
 		/**
 		 * Open a video capture stream
 		 */
-		VideoCapture capture = new VideoCapture(0);
+		VideoCapture capture = new VideoCapture("http://FRC:FRC@10.54.50.3/mjpg/video.mjpg");
 		Mat frame = new Mat();
 		wait(1000);
 		
