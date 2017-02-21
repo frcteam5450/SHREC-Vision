@@ -209,12 +209,6 @@ class SHRECVision implements Runnable {
 		 * Allow the roborio and radio to begin transmitting a wireless signal
 		 */
 		wait(5000);
-		
-		/**
-		 * Start the UDP Socket thread
-		 */
-		new Thread(client).start();
-		wait(1000);
 		 
 		/**
 		 * Open a video capture stream
@@ -234,6 +228,12 @@ class SHRECVision implements Runnable {
 			System.out.println("Stream opened successfully");
 			
 			/**
+			 * Start the UDP Socket thread
+			 */
+			new Thread(client).start();
+			wait(1000);
+			
+			/**
 			 * Begin video processing loop
 			 */
 			while (client.getVisionState() != UDPClient.VisionState.Disabled) {
@@ -241,10 +241,6 @@ class SHRECVision implements Runnable {
 				 * Load preferences from an external text file
 				 */
 				loadPrefs();
-				
-				/**
-				 * Obtain the current state of the UDP Socket
-				 */
 				
 				/**
 				 * Ensure that the UDP Socket is connected
@@ -335,7 +331,6 @@ class SHRECVision implements Runnable {
 		 * Remove noise from the frame
 		 */
 		Imgproc.morphologyEx(frame, frame, Imgproc.MORPH_OPEN, element);
-    	Imgcodecs.imwrite("/home/pi/Desktop/threshold.png", frame);
     	
 		/**
 		 * Store contours found in the frame
@@ -395,7 +390,7 @@ class SHRECVision implements Runnable {
 				 * Calculating a running average velocity
 				 */
 				double[] old_coords = new double[6];
-				System.arraycopy( coordinates, 0, old_coords, 0, coordinates.length );
+				System.arraycopy(coordinates, 0, old_coords, 0, coordinates.length);
 				coordinates = new double[] {
 					((double)(boundary1.tl().x + boundary2.br().x) / 2.0) / (double)camera_width * 2.0 - 1.0,
 					((double)(boundary1.tl().y + boundary2.br().y) / 2.0) / (double)camera_height * 2.0 - 1.0,
@@ -411,7 +406,7 @@ class SHRECVision implements Runnable {
 				 * Calculating a running average velocity
 				 */
 				double[] old_coords = new double[6];
-				System.arraycopy( coordinates, 0, old_coords, 0, coordinates.length );
+				System.arraycopy(coordinates, 0, old_coords, 0, coordinates.length);
 				coordinates = new double[] {
 					((double)(boundary1.tl().x + boundary2.br().x) / 2.0) / (double)camera_width * 2.0 - 1.0,
 					((double)(boundary1.tl().y + boundary2.br().y) / 2.0) / (double)camera_height * 2.0 - 1.0,
@@ -421,12 +416,6 @@ class SHRECVision implements Runnable {
 					0.4 * old_coords[5] + 0.6 * (coordinates[2] - old_coords[2]),
 				};
 			}
-			
-			/**
-			 * Draw on original image
-			 */
-			Imgproc.circle(original, new Point(coordinates[0], coordinates[1]), 5, new Scalar(0, 255, 0), 2);
-			Imgcodecs.imwrite("/home/pi/Desktop/video.png", original);
 			
 			/**
 			 * Send the coordinates to the UDP Socket

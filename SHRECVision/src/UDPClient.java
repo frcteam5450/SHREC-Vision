@@ -53,11 +53,18 @@ public class UDPClient implements Runnable {
 		} else {
 			System.out.println("Failed to connect to UDP Server");
 			setVisionState(VisionState.Disabled);
+			
+			try {
+				Thread.sleep(100);
+			} catch(InterruptedException e) {
+				e.printStackTrace();
+			}
+			
+			UDPClient.this.startSocket();
 		}
 	}
 	
 	private void updateSocket() {
-		
 		// Generate a message to send
 		String request = generateRequest();
 		sendData = request.getBytes();

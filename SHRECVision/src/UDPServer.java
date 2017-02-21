@@ -45,6 +45,14 @@ public class UDPServer implements Runnable {
 		} else {
 			System.out.println("Failed to start UDP Server");
 			setVisionState(VisionState.Disabled);
+			
+			try {
+				Thread.sleep(100);
+			} catch(InterruptedException e) {
+				e.printStackTrace();
+			}
+			
+			UDPServer.this.startSocket();
 		}
 	}
 	
