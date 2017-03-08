@@ -26,7 +26,7 @@ import java.io.*;
  * 
  * Version: 0.1.0.
  * 
- * Date: February 19, 2017.
+ * Date: February 18, 2017.
  * 
  * Name: USB Camera Stream.
  * 
@@ -39,7 +39,7 @@ import java.io.*;
  * 
  * Version: 0.1.1.
  * 
- * Date: February 20, 2017.
+ * Date: February 19, 2017.
  * 
  * Name: Real-time Computer Vision.
  * 
@@ -62,6 +62,17 @@ import java.io.*;
  * roborio and a raspberry pi. The client UDP Socket receives a vision state, which directs
  * the raspberry pi which vision target to open and process. This application dynamically loads
  * vision tracking preferences and thresholds from a text file of the raspberry pi.
+ * 
+ * Version: 0.1.3.
+ * 
+ * Date: March 2, 2017.
+ * 
+ * Name: Incedence Angle
+ * 
+ * Description: This version of this project fizes a number of bugs with the UDP Client, and
+ * calculates a horizontal incidence angle with the vision target rather than x and y positions.
+ * This calculation is used to incrementally aim towards the vision target. This application
+ * publishes an angle to the UDP server to be read by a NI RoboRIO device.
  * 
  */
 class SHRECVision implements Runnable {
@@ -157,7 +168,7 @@ class SHRECVision implements Runnable {
 	/**
 	 * The field of view of the camera
 	 */
-	private static final double camera_horizontal_fov = 67.0;
+	private static final double camera_horizontal_fov = 67.0 / 180.0 * Math.PI;
 	private static final double camera_width = 320.0;
 	private static final double camera_height = 240.0;
 	
@@ -208,7 +219,6 @@ class SHRECVision implements Runnable {
 		/**
 		 * Allow the roborio and radio to begin transmitting a wireless signal
 		 */
-		wait(5000);
 		 
 		/**
 		 * Open a video capture stream
@@ -216,7 +226,6 @@ class SHRECVision implements Runnable {
 		VideoCapture captureGear = new VideoCapture("http://FRC:FRC@10.54.50.3:80/mjpg/video.mjpg");
 		VideoCapture captureBoiler = new VideoCapture("http://FRC:FRC@10.54.50.4:80/mjpg/video.mjpg");
 		Mat frame = new Mat();
-		wait(1000);
 		
 		/**
 		 * Check the state of the video stream
@@ -231,7 +240,6 @@ class SHRECVision implements Runnable {
 			 * Start the UDP Socket thread
 			 */
 			new Thread(client).start();
-			wait(1000);
 			
 			/**
 			 * Begin video processing loop
@@ -279,11 +287,25 @@ class SHRECVision implements Runnable {
 						 * The vision state is idle, no processing necessary
 						 */
 						//System.out.println("Frame not read, processing disabled");
+					} else if (state == UDPClient.VisionState.Disabled) {
+						/**
+						 * Vision is disabled, likely because of a communication error
+ 						 */
+						System.out.println("Vision disabled");
 					} else {
 						/**
 						 * Error reading frame
 						 */
-						System.out.println("Error reading frame");
+						System.out.println("Error reading frame, reopening stream");
+
+						/**
+						 * Check the camera streams and reconnect
+						 */
+						if (state == UDPClient.VisionState.Boiler) {
+							captureBoiler = new VideoCapture("http://FRC:FRC@10.54.50.4:80/mjpg/video.mjpg");
+						} else if (state == UDPClient.VisionState.Gear) {
+							captureGear = new VideoCapture("http://FRC:FRC@10.54.50.3:80/mjpg/video.mjpg");
+						}
 					}
 					
 					/**
@@ -304,6 +326,7 @@ class SHRECVision implements Runnable {
 			 * Error opening video stream
 			 */
 			System.out.println("Error opening video stream");
+			wait(1000);
 			
 			/**
 			 * Retry opening the camera stream
@@ -331,6 +354,7 @@ class SHRECVision implements Runnable {
 		 * Remove noise from the frame
 		 */
 		Imgproc.morphologyEx(frame, frame, Imgproc.MORPH_OPEN, element);
+		Imgcodecs.imwrite("/home/pi/Desktop/image.png", frame);
     	
 		/**
 		 * Store contours found in the frame
@@ -376,9 +400,9 @@ class SHRECVision implements Runnable {
 			Rect boundary2 = Imgproc.boundingRect(contours.get(index2));
 			
 			/**
-			 * Calculate the x, y, and z position and velocity of the target shape
+			 * Calculate the incidence angle of the target shape
 			 */
-			double[] coordinates = client.getCoords();
+			double angle = 0.0;
 			
 			/**
 			 * Locate the reflective tape
@@ -386,41 +410,32 @@ class SHRECVision implements Runnable {
 			if (client.getVisionState() == UDPClient.VisionState.Boiler) {
 				/**
 				 * The robot is facing the boiler
-				 * Update the z, y, and z positions
+				 * Update the horizontal incedence angle
 				 * Calculating a running average velocity
 				 */
-				double[] old_coords = new double[6];
-				System.arraycopy(coordinates, 0, old_coords, 0, coordinates.length);
-				coordinates = new double[] {
-					((double)(boundary1.tl().x + boundary2.br().x) / 2.0) / (double)camera_width * 2.0 - 1.0,
-					((double)(boundary1.tl().y + boundary2.br().y) / 2.0) / (double)camera_height * 2.0 - 1.0,
-					boiler_fudge_factor * boiler_width / (Math.tan(camera_horizontal_fov * (Math.abs(((double)(boundary1.tl().x + boundary1.br().x) / 2.0) - ((double)(boundary2.tl().x + boundary2.br().x) / 2.0)) + (boundary1.width / 2.0) + (boundary2.width / 2.0)) / camera_width)),
-					0.4 * old_coords[3] + 0.6 * (coordinates[0] - old_coords[0]),
-					0.4 * old_coords[4] + 0.6 * (coordinates[1] - old_coords[1]),
-					0.4 * old_coords[5] + 0.6 * (coordinates[2] - old_coords[2]),
-				};
+				
+				angle = camera_horizontal_fov * (Math.abs(((double)(boundary1.tl().x + boundary1.br().x) / 2.0) -
+					((double)(boundary2.tl().x + boundary2.br().x) / 2.0)) +
+					(boundary1.width / 2.0) + (boundary2.width / 2.0)) / camera_width;
+				
+				System.out.println("Angle: " + angle);
 			} else if (client.getVisionState() == UDPClient.VisionState.Gear) {
 				/**
 				 * The robot is facing the gear hook
-				 * Update the z, y, and z positions
+				 * Update the horizontal incedence angle
 				 * Calculating a running average velocity
 				 */
-				double[] old_coords = new double[6];
-				System.arraycopy(coordinates, 0, old_coords, 0, coordinates.length);
-				coordinates = new double[] {
-					((double)(boundary1.tl().x + boundary2.br().x) / 2.0) / (double)camera_width * 2.0 - 1.0,
-					((double)(boundary1.tl().y + boundary2.br().y) / 2.0) / (double)camera_height * 2.0 - 1.0,
-					gear_fudge_factor * gear_width_difference / (Math.tan(camera_horizontal_fov * (Math.abs(((double)(boundary1.tl().x + boundary1.br().x) / 2.0) - ((double)(boundary2.tl().x + boundary2.br().x) / 2.0)) + (boundary1.width / 2.0) + (boundary2.width / 2.0)) / camera_width)),
-					0.4 * old_coords[3] + 0.6 * (coordinates[0] - old_coords[0]),
-					0.4 * old_coords[4] + 0.6 * (coordinates[1] - old_coords[1]),
-					0.4 * old_coords[5] + 0.6 * (coordinates[2] - old_coords[2]),
-				};
+				angle = camera_horizontal_fov * (Math.abs(((double)(boundary1.tl().x + boundary1.br().x) / 2.0) -
+					((double)(boundary2.tl().x + boundary2.br().x) / 2.0)) +
+					(boundary1.width / 2.0) + (boundary2.width / 2.0)) / camera_width;
+				
+				System.out.println("Angle: " + angle);
 			}
 			
 			/**
-			 * Send the coordinates to the UDP Socket
+			 * Send the angle to the UDP Socket
 			 */
-			client.setCoords(coordinates);
+			client.setAngle(angle);
 		} else {
 			System.out.println("No matching contours found");
 		}
