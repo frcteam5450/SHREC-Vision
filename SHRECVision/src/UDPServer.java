@@ -4,14 +4,9 @@ import java.net.*;
 public class UDPServer implements Runnable {
 
 	/**
-	 * 0: X Position
-	 * 1: Y Position
-	 * 2: Z Position
-	 * 3: X Velocity
-	 * 4: Y Velocity
-	 * 5: Z Velocity
+	 * 0: Incidence Angle
 	 */
-	private double[] coordinates;
+	private double angle;
 
 	public enum VisionState {
 		Boiler,
@@ -33,11 +28,11 @@ public class UDPServer implements Runnable {
 			serverSocket = new DatagramSocket(5800);
 		} catch (SocketException e) {
 			// TODO Auto-generated catch block
-			//e.printStackTrace();
+			e.printStackTrace();
 		}
 		receiveData = new byte[1024];
 		sendData = new byte[1024];
-		coordinates = new double[6];
+		angle = 0.0;
 		
 		if (isConnected()) {
 			System.out.println("Successfully started UDP Server");
@@ -64,7 +59,7 @@ public class UDPServer implements Runnable {
 			serverSocket.receive(receivePacket);
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
-			//e.printStackTrace();
+			e.printStackTrace();
 		}
 		
 		// Extract text from the byte packet
@@ -94,7 +89,7 @@ public class UDPServer implements Runnable {
 			serverSocket.send(sendPacket);
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
-			//e.printStackTrace();
+			e.printStackTrace();
 		}
 	}
 	
@@ -104,10 +99,16 @@ public class UDPServer implements Runnable {
 	
 	private void handleRequest(String request) {
 		// Update internal state variables depending on the request
-		String[] buffer = request.split(",");
-		for (int i = 0; i < coordinates.length; i++) {
-			coordinates[i] = Double.parseDouble(buffer[i]);
+		int index = request.indexOf('!');
+		String buffer = request.substring(0, index);
+		double a = 0.0;
+		try {
+			a = Double.parseDouble(buffer);
+		} catch(NumberFormatException e){
+			e.printStackTrace();
+			a = getAngle();
 		}
+		setAngle(a);
 	}
 	
 	public synchronized void setVisionState(VisionState s) {
@@ -118,12 +119,12 @@ public class UDPServer implements Runnable {
 		return state;
 	}
 	
-	public synchronized void setCoords(double[] _c) {
-		coordinates = _c;
+	public synchronized void setAngle(double _a) {
+		angle = _a;
 	}
 	
-	public synchronized double[] getCoords() {
-		return coordinates;
+	public synchronized double getAngle() {
+		return angle;
 	}
 	
 	public boolean isConnected() {

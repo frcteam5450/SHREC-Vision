@@ -74,7 +74,7 @@ public class UDPClient implements Runnable {
 				e.printStackTrace();
 			}
 			
-			System.out.println("Sending UDP");
+			System.out.println("Sending UDP Stream");
 	
 			// Receive a response from the server
 			DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
@@ -85,7 +85,7 @@ public class UDPClient implements Runnable {
 				e.printStackTrace();
 			}
 			
-			System.out.println("Reading UDP");
+			System.out.println("Receiving UDP Stream");
 			
 			String response = new String(receivePacket.getData());
 			if (response.substring(0, 1).equals("3")) {

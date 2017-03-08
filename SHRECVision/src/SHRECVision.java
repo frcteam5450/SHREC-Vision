@@ -67,9 +67,9 @@ import java.io.*;
  * 
  * Date: March 2, 2017.
  * 
- * Name: Incedence Angle
+ * Name: Incidence Angle
  * 
- * Description: This version of this project fizes a number of bugs with the UDP Client, and
+ * Description: This version of this project fixes a number of bugs with the UDP Client, and
  * calculates a horizontal incidence angle with the vision target rather than x and y positions.
  * This calculation is used to incrementally aim towards the vision target. This application
  * publishes an angle to the UDP server to be read by a NI RoboRIO device.
@@ -251,75 +251,63 @@ class SHRECVision implements Runnable {
 				loadPrefs();
 				
 				/**
-				 * Ensure that the UDP Socket is connected
+				 * Socket opened successfully
 				 */
-				if (client.isConnected()) {
+				UDPClient.VisionState state = client.getVisionState();
+				 
+				/**
+				 * Obtain a video frame
+				 */
+				 boolean frame_opened = false;
+				 if (state == UDPClient.VisionState.Boiler) {
+					 frame_opened = captureBoiler.read(frame);
+				 } else if (state == UDPClient.VisionState.Gear) {
+					 frame_opened = captureGear.read(frame);
+				 }
+				
+				/**
+				 * Check if frame was read correctly
+				 */
+				if(frame_opened) {
 					/**
-					 * Socket opened successfully
+					 * Frame read successfully
 					 */
-					UDPClient.VisionState state = client.getVisionState();
-					 
-					/**
-					 * Obtain a video frame
-					 */
-					 boolean frame_opened = false;
-					 if (state == UDPClient.VisionState.Boiler) {
-						 frame_opened = captureBoiler.read(frame);
-					 } else if (state == UDPClient.VisionState.Gear) {
-						 frame_opened = captureGear.read(frame);
-					 }
+					//System.out.println("Frame read successfully, processing enabled | " + SHRECVision.mRate + " frames/sec");
 					
 					/**
-					 * Check if frame was read correctly
+					 * Begin processing the frame
 					 */
-					if(frame_opened) {
-						/**
-						 * Frame read successfully
-						 */
-						//System.out.println("Frame read successfully, processing enabled | " + SHRECVision.mRate + " frames/sec");
-						
-						/**
-						 * Begin processing the frame
-						 */
-						process(frame);
-					} else if(state == UDPClient.VisionState.Idle) {
-						/**
-						 * The vision state is idle, no processing necessary
-						 */
-						//System.out.println("Frame not read, processing disabled");
-					} else if (state == UDPClient.VisionState.Disabled) {
-						/**
-						 * Vision is disabled, likely because of a communication error
- 						 */
-						System.out.println("Vision disabled");
-					} else {
-						/**
-						 * Error reading frame
-						 */
-						System.out.println("Error reading frame, reopening stream");
-
-						/**
-						 * Check the camera streams and reconnect
-						 */
-						if (state == UDPClient.VisionState.Boiler) {
-							captureBoiler = new VideoCapture("http://FRC:FRC@10.54.50.4:80/mjpg/video.mjpg");
-						} else if (state == UDPClient.VisionState.Gear) {
-							captureGear = new VideoCapture("http://FRC:FRC@10.54.50.3:80/mjpg/video.mjpg");
-						}
-					}
-					
+					process(frame);
+				} else if(state == UDPClient.VisionState.Idle) {
 					/**
-					 * Calculate a refresh rate
+					 * The vision state is idle, no processing necessary
 					 */
-					getRate();
+					//System.out.println("Frame not read, processing disabled");
+				} else if (state == UDPClient.VisionState.Disabled) {
+					/**
+					 * Vision is disabled, likely because of a communication error
+					 */
+					System.out.println("Vision disabled");
 				} else {
 					/**
-					 * Failed to open socket
-					 * Start a new socket connection
+					 * Error reading frame
 					 */
-					new Thread(client).start();
-					wait(1000);
+					System.out.println("Error reading frame, reopening stream");
+
+					/**
+					 * Check the camera streams and reconnect
+					 */
+					if (state == UDPClient.VisionState.Boiler) {
+						captureBoiler = new VideoCapture("http://FRC:FRC@10.54.50.4:80/mjpg/video.mjpg");
+					} else if (state == UDPClient.VisionState.Gear) {
+						captureGear = new VideoCapture("http://FRC:FRC@10.54.50.3:80/mjpg/video.mjpg");
+					}
 				}
+				
+				/**
+				 * Calculate a refresh rate
+				 */
+				getRate();
 			}
 		} else {
 			/**
