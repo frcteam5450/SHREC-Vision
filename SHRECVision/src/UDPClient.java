@@ -37,9 +37,6 @@ public class UDPClient implements Runnable {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
-		
-		sendData = new byte[1024];
-		receiveData = new byte[1024];
 		angle = 0.0;
 		
 		if (isConnected()) {
@@ -60,9 +57,11 @@ public class UDPClient implements Runnable {
 	
 	private void updateSocket() {
 		if(isConnected()) {
+			sendData = new byte[1024];
+			receiveData = new byte[1024];
+		
 			// Generate a message to send
 			String request = generateRequest();
-			System.out.println("Request: " + request);
 			sendData = request.getBytes();
 		
 			// Send the request to the UDP Server
@@ -73,8 +72,6 @@ public class UDPClient implements Runnable {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
-			
-			System.out.println("Sending UDP Stream");
 	
 			// Receive a response from the server
 			DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
@@ -84,8 +81,6 @@ public class UDPClient implements Runnable {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
-			
-			System.out.println("Receiving UDP Stream");
 			
 			String response = new String(receivePacket.getData());
 			if (response.substring(0, 1).equals("3")) {
@@ -97,8 +92,6 @@ public class UDPClient implements Runnable {
 			} else if (response.substring(0, 1).equals("0")) {
 				setVisionState(VisionState.Disabled);
 			}
-			
-			System.out.println("Response: " + response);
 
 			try {
 				Thread.sleep(100);

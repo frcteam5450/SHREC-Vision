@@ -63,6 +63,8 @@ import java.io.*;
  * the raspberry pi which vision target to open and process. This application dynamically loads
  * vision tracking preferences and thresholds from a text file of the raspberry pi.
  * 
+ * 
+ * 
  * Version: 0.1.3.
  * 
  * Date: March 2, 2017.
@@ -73,6 +75,18 @@ import java.io.*;
  * calculates a horizontal incidence angle with the vision target rather than x and y positions.
  * This calculation is used to incrementally aim towards the vision target. This application
  * publishes an angle to the UDP server to be read by a NI RoboRIO device.
+ * 
+ * 
+ * 
+ * Version: 0.1.4.
+ * 
+ * Date: March 6, 2017.
+ * 
+ * Name: Robust Improvement
+ * 
+ * Description: This version of this projects removes a number of bugs that existed with the
+ * UDP Client and Server. This code also alters the incidence angle calculation into a form that
+ * spans between -FOV/2 to +FOV/2 of the IP camera.
  * 
  */
 class SHRECVision implements Runnable {
@@ -168,7 +182,7 @@ class SHRECVision implements Runnable {
 	/**
 	 * The field of view of the camera
 	 */
-	private static final double camera_horizontal_fov = 67.0 / 180.0 * Math.PI;
+	private static final double camera_horizontal_fov = 67.0/* / 180.0 * Math.PI*/;
 	private static final double camera_width = 320.0;
 	private static final double camera_height = 240.0;
 	
@@ -277,7 +291,7 @@ class SHRECVision implements Runnable {
 					/**
 					 * Begin processing the frame
 					 */
-					process(frame);
+					process(frame, state);
 				} else if(state == UDPClient.VisionState.Idle) {
 					/**
 					 * The vision state is idle, no processing necessary
@@ -326,7 +340,7 @@ class SHRECVision implements Runnable {
 	/**
 	 * This processes the incoming frame from the video stream
 	 */
-	private void process(Mat frame) {
+	private void process(Mat frame, UDPClient.VisionState state) {
 		Mat original = frame.clone();
 		/**
 		 * First, convert the image to the HSV color space
@@ -356,76 +370,76 @@ class SHRECVision implements Runnable {
     	Imgproc.findContours(frame, contours, hierarchy, Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_SIMPLE);
     	
     	/**
-    	 * Select the largest two contours
-    	 */
-    	double referenced_area1 = 0;
-    	double referenced_area2 = 0;
-    	int index1 = -1;
-    	int index2 = -1;
-    	for (int i = 0; i < contours.size(); i++) {
-			double area = Imgproc.contourArea(contours.get(i));
-			if ((area > referenced_area1) && (area > min_area) && (area < max_area)) {
-				referenced_area2 = referenced_area1;
-				referenced_area1 = area;
-				index2 = index1;
-				index1 = i;
-			} else if ((area > referenced_area2) && (area > min_area) && (area < max_area)) {
-				referenced_area2 = area;
-				index2 = i;
-			}
-    	}
-    	
-    	/**
     	 * Check if a matching coutour has been found
     	 */
-    	if (index1 != -1 && index2 != -1) {
-			//System.out.println("Two matching contours found");
-			
+    	if (contours.size() > 0) {
 			/**
-			 * Obtain the bounding box of the largest shape
+			 * Select the largest two contours **Error ay stop code when no contours present
 			 */
-			Rect boundary1 = Imgproc.boundingRect(contours.get(index1));
-			Rect boundary2 = Imgproc.boundingRect(contours.get(index2));
-			
-			/**
-			 * Calculate the incidence angle of the target shape
-			 */
-			double angle = 0.0;
-			
-			/**
-			 * Locate the reflective tape
-			 */
-			if (client.getVisionState() == UDPClient.VisionState.Boiler) {
-				/**
-				 * The robot is facing the boiler
-				 * Update the horizontal incedence angle
-				 * Calculating a running average velocity
-				 */
-				
-				angle = camera_horizontal_fov * (Math.abs(((double)(boundary1.tl().x + boundary1.br().x) / 2.0) -
-					((double)(boundary2.tl().x + boundary2.br().x) / 2.0)) +
-					(boundary1.width / 2.0) + (boundary2.width / 2.0)) / camera_width;
-				
-				System.out.println("Angle: " + angle);
-			} else if (client.getVisionState() == UDPClient.VisionState.Gear) {
-				/**
-				 * The robot is facing the gear hook
-				 * Update the horizontal incedence angle
-				 * Calculating a running average velocity
-				 */
-				angle = camera_horizontal_fov * (Math.abs(((double)(boundary1.tl().x + boundary1.br().x) / 2.0) -
-					((double)(boundary2.tl().x + boundary2.br().x) / 2.0)) +
-					(boundary1.width / 2.0) + (boundary2.width / 2.0)) / camera_width;
-				
-				System.out.println("Angle: " + angle);
+			double referenced_area1 = 0;
+			double referenced_area2 = 0;
+			int index1 = -1;
+			int index2 = -1;
+			for (int i = 0; i < contours.size(); i++) {
+				double area = Imgproc.contourArea(contours.get(i));
+				if ((area > referenced_area1) && (area > min_area) && (area < max_area)) {
+					referenced_area2 = referenced_area1;
+					referenced_area1 = area;
+					index2 = index1;
+					index1 = i;
+				} else if ((area > referenced_area2) && (area > min_area) && (area < max_area)) {
+					referenced_area2 = area;
+					index2 = i;
+				}
 			}
-			
-			/**
-			 * Send the angle to the UDP Socket
-			 */
-			client.setAngle(angle);
+    	
+			if (index1 != -1 && index2 != -1) {
+				/**
+				 * Obtain the bounding box of the largest shape
+				 */
+				Rect boundary1 = Imgproc.boundingRect(contours.get(index1));
+				Rect boundary2 = Imgproc.boundingRect(contours.get(index2));
+				
+				/**
+				 * Calculate the incidence angle of the target shape
+				 */
+				double angle = 0.0;
+				
+				/**
+				 * Locate the reflective tape
+				 */
+				if (state == UDPClient.VisionState.Boiler) {
+					/**
+					 * The robot is facing the boiler
+					 * Update the horizontal incedence angle
+					 * Calculating a running average velocity
+					 */
+					
+					angle = camera_horizontal_fov * (((((double)(boundary1.tl().x + boundary1.br().x) / 2.0) +
+						((double)(boundary2.tl().x + boundary2.br().x) / 2.0)) / (camera_width)) - 1.0) / 2.0;
+					
+					System.out.println("Angle: " + angle);
+				} else if (state == UDPClient.VisionState.Gear) {
+					/**
+					 * The robot is facing the gear hook
+					 * Update the horizontal incedence angle
+					 * Calculating a running average velocity
+					 */
+					angle = camera_horizontal_fov * (((((double)(boundary1.tl().x + boundary1.br().x) / 2.0) +
+						((double)(boundary2.tl().x + boundary2.br().x) / 2.0)) / (camera_width)) - 1.0) / 2.0;
+					
+					System.out.println("Angle: " + angle);
+				}
+				
+				/**
+				 * Send the angle to the UDP Socket
+				 */
+				client.setAngle(angle);
+			} else {
+				System.out.println("No contours matched");
+			}
 		} else {
-			System.out.println("No matching contours found");
+			System.out.println("No contours found");
 		}
 	}
 	

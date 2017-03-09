@@ -30,8 +30,6 @@ public class UDPServer implements Runnable {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
-		receiveData = new byte[1024];
-		sendData = new byte[1024];
 		angle = 0.0;
 		
 		if (isConnected()) {
@@ -52,6 +50,9 @@ public class UDPServer implements Runnable {
 	}
 	
 	private void updateSocket() {
+		receiveData = new byte[1024];
+		sendData = new byte[1024];
+		
 		// Receive a packet of bytes from a client
 		DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
        
