@@ -88,6 +88,18 @@ import java.io.*;
  * UDP Client and Server. This code also alters the incidence angle calculation into a form that
  * spans between -FOV/2 to +FOV/2 of the IP camera.
  * 
+ * 
+ * 
+ * Version: 0.1.5.
+ * 
+ * Date: March 9, 2017.
+ * 
+ * Name: Successful Gear Placement
+ * 
+ * Description: This version of this project has been successfully tested streaming an incidence angle
+ * calculation to the NI RoboRIO via UDP Port 5800. A robot running this application has been
+ * successfully tested delivering a gear during autonomous mode.
+ * 
  */
 class SHRECVision implements Runnable {
 	static { System.loadLibrary(Core.NATIVE_LIBRARY_NAME); }
@@ -242,6 +254,24 @@ class SHRECVision implements Runnable {
 		Mat frame = new Mat();
 		
 		/**
+		 * Close the camera stream, and reopen for stability
+		 */
+		captureGear.release();
+		captureBoiler.release();
+		captureGear = new VideoCapture("http://FRC:FRC@10.54.50.3:80/mjpg/video.mjpg");
+		captureBoiler = new VideoCapture("http://FRC:FRC@10.54.50.4:80/mjpg/video.mjpg");
+		
+		/**
+		 * Open a test video stream
+		 */
+		double initStartTime = System.currentTimeMillis();
+		while (System.currentTimeMillis() - initStartTime > 6000) {
+			captureBoiler.read(frame);
+			captureGear.read(frame);
+			process(frame, UDPClient.VisionState.Gear);
+		}
+		
+		/**
 		 * Check the state of the video stream
 		 */
 		if (captureGear.isOpened() && captureBoiler.isOpened()) {
@@ -312,8 +342,10 @@ class SHRECVision implements Runnable {
 					 * Check the camera streams and reconnect
 					 */
 					if (state == UDPClient.VisionState.Boiler) {
+						captureBoiler.release();
 						captureBoiler = new VideoCapture("http://FRC:FRC@10.54.50.4:80/mjpg/video.mjpg");
 					} else if (state == UDPClient.VisionState.Gear) {
+						captureGear.release();
 						captureGear = new VideoCapture("http://FRC:FRC@10.54.50.3:80/mjpg/video.mjpg");
 					}
 				}
@@ -418,7 +450,7 @@ class SHRECVision implements Runnable {
 					angle = camera_horizontal_fov * (((((double)(boundary1.tl().x + boundary1.br().x) / 2.0) +
 						((double)(boundary2.tl().x + boundary2.br().x) / 2.0)) / (camera_width)) - 1.0) / 2.0;
 					
-					System.out.println("Angle: " + angle);
+					//System.out.println("Angle: " + angle);
 				} else if (state == UDPClient.VisionState.Gear) {
 					/**
 					 * The robot is facing the gear hook
@@ -428,7 +460,7 @@ class SHRECVision implements Runnable {
 					angle = camera_horizontal_fov * (((((double)(boundary1.tl().x + boundary1.br().x) / 2.0) +
 						((double)(boundary2.tl().x + boundary2.br().x) / 2.0)) / (camera_width)) - 1.0) / 2.0;
 					
-					System.out.println("Angle: " + angle);
+					//System.out.println("Angle: " + angle);
 				}
 				
 				/**
@@ -436,10 +468,10 @@ class SHRECVision implements Runnable {
 				 */
 				client.setAngle(angle);
 			} else {
-				System.out.println("No contours matched");
+				//System.out.println("No contours matched");
 			}
 		} else {
-			System.out.println("No contours found");
+			//System.out.println("No contours found");
 		}
 	}
 	

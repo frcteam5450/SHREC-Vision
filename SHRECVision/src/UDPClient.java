@@ -72,7 +72,7 @@ public class UDPClient implements Runnable {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
-	
+			
 			// Receive a response from the server
 			DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
 			try {
@@ -83,6 +83,7 @@ public class UDPClient implements Runnable {
 			}
 			
 			String response = new String(receivePacket.getData());
+			System.out.println("Response: " + response);
 			if (response.substring(0, 1).equals("3")) {
 				setVisionState(VisionState.Boiler);
 			} else if (response.substring(0, 1).equals("2")) {
@@ -90,7 +91,7 @@ public class UDPClient implements Runnable {
 			} else if (response.substring(0, 1).equals("1")) {
 				setVisionState(VisionState.Idle);
 			} else if (response.substring(0, 1).equals("0")) {
-				setVisionState(VisionState.Disabled);
+				//setVisionState(VisionState.Disabled);
 			}
 
 			try {
