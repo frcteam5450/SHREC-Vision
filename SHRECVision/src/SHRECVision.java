@@ -100,6 +100,19 @@ import java.io.*;
  * calculation to the NI RoboRIO via UDP Port 5800. A robot running this application has been
  * successfully tested delivering a gear during autonomous mode.
  * 
+ * 
+ * 
+ * Version: 0.2.0.
+ * 
+ * Date: March 19, 2017.
+ * 
+ * Name: Competition Tested
+ *
+ * Description: This version of this project has been tested at an FRC Competition, and successfully
+ * delivers incidence angle calculations to an NI RoboRIO in real time via a UDP Socket connected on port
+ * 5800. Note that all network devices have been assigned a static IP address for easy access, including
+ * the raspberry pi running this software.  
+ * 
  */
 class SHRECVision implements Runnable {
 	static { System.loadLibrary(Core.NATIVE_LIBRARY_NAME); }
@@ -234,7 +247,12 @@ class SHRECVision implements Runnable {
 	 * This is the entry point of this applicaton
 	 */
 	public static void main(String[] args) {
-			new SHRECVision().run();
+		/**
+		 * Start the UDP Socket thread
+		 */
+		new Thread(client).start();
+		
+		new SHRECVision().run();
 	}
 	
 	/**
@@ -242,34 +260,14 @@ class SHRECVision implements Runnable {
 	 */
 	@Override
 	public void run() {
-		/**
-		 * Allow the roborio and radio to begin transmitting a wireless signal
-		 */
 		 
 		/**
 		 * Open a video capture stream
 		 */
 		VideoCapture captureGear = new VideoCapture("http://FRC:FRC@10.54.50.3:80/mjpg/video.mjpg");
-		VideoCapture captureBoiler = new VideoCapture("http://FRC:FRC@10.54.50.4:80/mjpg/video.mjpg");
-		Mat frame = new Mat();
-		
-		/**
-		 * Close the camera stream, and reopen for stability
-		 */
-		captureGear.release();
-		captureBoiler.release();
-		captureGear = new VideoCapture("http://FRC:FRC@10.54.50.3:80/mjpg/video.mjpg");
-		captureBoiler = new VideoCapture("http://FRC:FRC@10.54.50.4:80/mjpg/video.mjpg");
-		
-		/**
-		 * Open a test video stream
-		 */
-		double initStartTime = System.currentTimeMillis();
-		while (System.currentTimeMillis() - initStartTime > 6000) {
-			captureBoiler.read(frame);
-			captureGear.read(frame);
-			process(frame, UDPClient.VisionState.Gear);
-		}
+		VideoCapture captureBoiler = new VideoCapture("http://FRC:FRC@10.54.50.5:80/mjpg/video.mjpg");
+		Mat frameGear = new Mat();
+		Mat frameBoiler = new Mat();
 		
 		/**
 		 * Check the state of the video stream
@@ -279,11 +277,7 @@ class SHRECVision implements Runnable {
 			 * Video stream opened sucessfully
 			 */
 			System.out.println("Stream opened successfully");
-			
-			/**
-			 * Start the UDP Socket thread
-			 */
-			new Thread(client).start();
+
 			
 			/**
 			 * Begin video processing loop
@@ -302,37 +296,50 @@ class SHRECVision implements Runnable {
 				/**
 				 * Obtain a video frame
 				 */
-				 boolean frame_opened = false;
-				 if (state == UDPClient.VisionState.Boiler) {
-					 frame_opened = captureBoiler.read(frame);
-				 } else if (state == UDPClient.VisionState.Gear) {
-					 frame_opened = captureGear.read(frame);
-				 }
+				boolean frame_boiler_opened = captureBoiler.read(frameBoiler);
+				boolean frame_gear_opened = captureGear.read(frameGear);
 				
 				/**
 				 * Check if frame was read correctly
 				 */
-				if(frame_opened) {
+				if(frame_boiler_opened && frame_gear_opened) {
 					/**
 					 * Frame read successfully
 					 */
 					//System.out.println("Frame read successfully, processing enabled | " + SHRECVision.mRate + " frames/sec");
 					
-					/**
-					 * Begin processing the frame
-					 */
-					process(frame, state);
-				} else if(state == UDPClient.VisionState.Idle) {
-					/**
-					 * The vision state is idle, no processing necessary
-					 */
-					//System.out.println("Frame not read, processing disabled");
-				} else if (state == UDPClient.VisionState.Disabled) {
-					/**
-					 * Vision is disabled, likely because of a communication error
-					 */
-					System.out.println("Vision disabled");
-				} else {
+					if(state == UDPClient.VisionState.Boiler) {
+						/**
+						 * The vision state is idle, no processing necessary
+						 */
+						//System.out.println("Processing for Boiler");
+						
+						/**
+						 * Begin processing the frame
+						 */
+						process(frameBoiler, state);
+					} else if(state == UDPClient.VisionState.Gear) {
+						/**
+						 * The vision state is idle, no processing necessary
+						 */
+						//System.out.println("Processing for Gear");
+						
+						/**
+						 * Begin processing the frame
+						 */
+						process(frameGear, state);
+					} else if(state == UDPClient.VisionState.Idle) {
+						/**
+						 * The vision state is idle, no processing necessary
+						 */
+						//System.out.println("Processing disabled");
+					} else if (state == UDPClient.VisionState.Disabled) {
+						/**
+						 * Vision is disabled, likely because of a communication error
+						 */
+						System.out.println("Vision disabled");
+					}
+				}  else {
 					/**
 					 * Error reading frame
 					 */
@@ -341,14 +348,14 @@ class SHRECVision implements Runnable {
 					/**
 					 * Check the camera streams and reconnect
 					 */
-					if (state == UDPClient.VisionState.Boiler) {
+					if (!frame_boiler_opened) {
 						captureBoiler.release();
-						captureBoiler = new VideoCapture("http://FRC:FRC@10.54.50.4:80/mjpg/video.mjpg");
-					} else if (state == UDPClient.VisionState.Gear) {
+						captureBoiler = new VideoCapture("http://FRC:FRC@10.54.50.5:80/mjpg/video.mjpg");
+					} if (!frame_gear_opened) {
 						captureGear.release();
 						captureGear = new VideoCapture("http://FRC:FRC@10.54.50.3:80/mjpg/video.mjpg");
 					}
-				}
+				} 
 				
 				/**
 				 * Calculate a refresh rate
@@ -360,11 +367,9 @@ class SHRECVision implements Runnable {
 			 * Error opening video stream
 			 */
 			System.out.println("Error opening video stream");
+			captureBoiler.release();
+			captureGear.release();
 			wait(1000);
-			
-			/**
-			 * Retry opening the camera stream
-			 */
 			SHRECVision.this.run();
 		}
 	}
@@ -406,20 +411,27 @@ class SHRECVision implements Runnable {
     	 */
     	if (contours.size() > 0) {
 			/**
-			 * Select the largest two contours **Error ay stop code when no contours present
+			 * Select the largest two contours
 			 */
+			double referenced_concavity1 = 0;
+			double referenced_concavity2 = 0;
 			double referenced_area1 = 0;
 			double referenced_area2 = 0;
 			int index1 = -1;
 			int index2 = -1;
 			for (int i = 0; i < contours.size(); i++) {
+				Rect boundary = Imgproc.boundingRect(contours.get(i));
 				double area = Imgproc.contourArea(contours.get(i));
-				if ((area > referenced_area1) && (area > min_area) && (area < max_area)) {
+				double concavity = area / boundary.area();
+				if ((concavity > referenced_concavity1) && (area > referenced_area1) && (area > min_area) && (area < max_area)) {
+					referenced_concavity2 = referenced_concavity1;
+					referenced_concavity1 = concavity;
 					referenced_area2 = referenced_area1;
 					referenced_area1 = area;
 					index2 = index1;
 					index1 = i;
-				} else if ((area > referenced_area2) && (area > min_area) && (area < max_area)) {
+				} else if ((concavity > referenced_concavity2) && (area > referenced_area2) && (area > min_area) && (area < max_area)) {
+					referenced_concavity2 = concavity;
 					referenced_area2 = area;
 					index2 = i;
 				}
@@ -468,10 +480,10 @@ class SHRECVision implements Runnable {
 				 */
 				client.setAngle(angle);
 			} else {
-				//System.out.println("No contours matched");
+				System.out.println("No contours matched");
 			}
 		} else {
-			//System.out.println("No contours found");
+			System.out.println("No contours found");
 		}
 	}
 	

@@ -38,6 +38,7 @@ public class UDPServer implements Runnable {
 		} else {
 			System.out.println("Failed to start UDP Server");
 			setVisionState(VisionState.Disabled);
+			UDPServer.this.closeSocket();
 			
 			try {
 				Thread.sleep(100);
@@ -54,17 +55,25 @@ public class UDPServer implements Runnable {
 		sendData = new byte[1024];
 		
 		// Receive a packet of bytes from a client
+		String request = "";
 		DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
-       
+		
 		try {
-			serverSocket.receive(receivePacket);
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
+			serverSocket.setSoTimeout(500);
+		} catch (SocketException e) {
 			e.printStackTrace();
 		}
 		
+		try {
+			serverSocket.receive(receivePacket);
+			request = new String( receivePacket.getData());
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+			return;
+		}
+		
 		// Extract text from the byte packet
-        String request = new String( receivePacket.getData());
         handleRequest(request);
         
         // Send a message back to the client
@@ -90,6 +99,12 @@ public class UDPServer implements Runnable {
 			serverSocket.send(sendPacket);
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		
+		try {
+			Thread.sleep(500);
+		} catch(InterruptedException e) {
 			e.printStackTrace();
 		}
 	}

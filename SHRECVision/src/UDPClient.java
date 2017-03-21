@@ -32,7 +32,7 @@ public class UDPClient implements Runnable {
 		}
 		
 		try {
-			IPAddress = InetAddress.getByName("roboRIO-5450-FRC.local");
+			IPAddress = InetAddress.getByName("10.54.50.2");
 		} catch (UnknownHostException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
@@ -45,6 +45,7 @@ public class UDPClient implements Runnable {
 		} else {
 			System.out.println("Failed to connect to UDP Server");
 			setVisionState(VisionState.Disabled);
+			UDPClient.this.closeSocket();
 			
 			try {
 				Thread.sleep(1000);
@@ -56,56 +57,57 @@ public class UDPClient implements Runnable {
 	}
 	
 	private void updateSocket() {
-		if(isConnected()) {
-			sendData = new byte[1024];
-			receiveData = new byte[1024];
+		sendData = new byte[1024];
+		receiveData = new byte[1024];
+	
+		// Generate a message to send
+		String request = generateRequest();
+		sendData = request.getBytes();
+	
+		System.out.println("Request: " + request);
+		// Send the request to the UDP Server
+		DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, IPAddress, 5800);
+		try {
+			clientSocket.send(sendPacket);
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
 		
-			// Generate a message to send
-			String request = generateRequest();
-			sendData = request.getBytes();
+		System.out.println("Awaiting Server");
+		try {
+			clientSocket.setSoTimeout(500);
+		} catch (SocketException e) {
+			e.printStackTrace();
+		}
 		
-			// Send the request to the UDP Server
-			DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, IPAddress, 5800);
-			try {
-				clientSocket.send(sendPacket);
-			} catch (IOException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}
-			
-			// Receive a response from the server
-			DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
-			try {
-				clientSocket.receive(receivePacket);
-			} catch (IOException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}
-			
-			String response = new String(receivePacket.getData());
-			System.out.println("Response: " + response);
-			if (response.substring(0, 1).equals("3")) {
-				setVisionState(VisionState.Boiler);
-			} else if (response.substring(0, 1).equals("2")) {
-				setVisionState(VisionState.Gear);
-			} else if (response.substring(0, 1).equals("1")) {
-				setVisionState(VisionState.Idle);
-			} else if (response.substring(0, 1).equals("0")) {
-				//setVisionState(VisionState.Disabled);
-			}
+		// Receive a response from the server
+		String response = "";
+		DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
+		try {
+			clientSocket.receive(receivePacket);
+			response = new String(receivePacket.getData());
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+			response = "1";
+		}
+		
+		System.out.println("Response: " + response);
+		if (response.substring(0, 1).equals("3")) {
+			setVisionState(VisionState.Boiler);
+		} else if (response.substring(0, 1).equals("2")) {
+			setVisionState(VisionState.Gear);
+		} else if (response.substring(0, 1).equals("1")) {
+			setVisionState(VisionState.Idle);
+		} else if (response.substring(0, 1).equals("0")) {
+			setVisionState(VisionState.Disabled);
+		}
 
-			try {
-				Thread.sleep(100);
-			} catch(InterruptedException e) {
-				e.printStackTrace();
-			}
-		} else {
-			try {
-				Thread.sleep(1000);
-			} catch(InterruptedException e) {
-				e.printStackTrace();
-			}
-			UDPClient.this.startSocket();
+		try {
+			Thread.sleep(500);
+		} catch(InterruptedException e) {
+			e.printStackTrace();
 		}
 	}
 	
